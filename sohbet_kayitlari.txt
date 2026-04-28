@@ -1,0 +1,18 @@
+--- KAYIT ZAMANI: 2026-04-27 23:40:20 ---
+GÖNDEREN: Siz (mert)
+MESAJ (Plaintext): deneme
+ŞİFRELİ (AES Ciphertext): gAAAAABp78m0KCO8Qm90lO0n9BFP40PNOBnPIuD_lY_vAu2KFV-4MS7hN9Mu3-4tmp2npFU1-zhfASleI5-z_3372fk5oRQrepwxDzFQAcnqy3lt9Na1-DPpRnabcDrY5UWYgVyiUnURN-vTUbfrVAJSP7ARMwiHBQ==
+--------------------------------------------------
+
+--- KAYIT ZAMANI: 2026-04-27 23:40:28 ---
+GÖNDEREN: caglar
+MESAJ (Plaintext): geldi
+ŞİFRELİ (AES Ciphertext): gAAAAABp78m8f5Le8zLZss-fqNe36dtZn8x9gsuSCPck6QvHsN03NAowRa5ZYNroQYe7AWCa-WoFluCoJcXCMji-sZzd6xcyppj6u9JmhH8tfICAgZONQP5Ty2208fd-rvkl-bPmFNPoq47nfzBFt0wu8V5HOp6siw==
+--------------------------------------------------
+
+--- KAYIT ZAMANI: 2026-04-27 23:40:30 ---
+GÖNDEREN: caglar
+MESAJ (Plaintext): *APOFKÜDROPGKTÜPHTR
+ŞİFRELİ (AES Ciphertext): gAAAAABp78m-CEZnWfJuaYiWEqVknxccIY4GSxgpHGt4GnivV7kXNmY9Z00SK_11xX_slmfg6COAWSAnwc4pu8upjl0vagpGKT3fze4CnPRlA_UgtVVgC9G253bRNAnbMoBcwm_JKrJ5shVHc1FJLuDxzKvj782IEnwOUUzlxEdJm90bhXB1Y6o=
+--------------------------------------------------
+
