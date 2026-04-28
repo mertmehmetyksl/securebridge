@@ -209,37 +209,37 @@ class WebSocketManager:
         while True:
             try:
                 self.state = ConnectionState.CONNECTING
-                if self.on_connecting:
-                    self.on_connecting()
+                if self.on_connecting: self.on_connecting()
 
-                async with websockets.connect(
-                    self.config.uri,
-                    ping_interval=self.config.ping_interval,
-                    ping_timeout=self.config.ping_timeout,
-                    close_timeout=5,
-                ) as ws:
+                async with websockets.connect(self.config.uri) as ws:
                     self.websocket = ws
-                    self.state     = ConnectionState.CONNECTED
-                    if self.on_connected:
-                        self.on_connected()
+                    self.state = ConnectionState.CONNECTED
+                    if self.on_connected: self.on_connected()
 
-                    async for raw in ws:
-                        if raw in self._IGNORE:
+                    while self.state == ConnectionState.CONNECTED:
+                        # --- PİNG ÖLÇÜMÜ ---
+                        try:
+                            start_time = self.loop.time()
+                            pong_waiter = await ws.ping()
+                            await pong_waiter
+                            latency = (self.loop.time() - start_time) * 1000
+                            if hasattr(self, 'on_ping_update'):
+                                self.on_ping_update(latency)
+                        except:
+                            pass
+
+                        # --- MESAJ BEKLEME ---
+                        try:
+                            raw = await asyncio.wait_for(ws.recv(), timeout=2.0)
+                            if raw in self._IGNORE: continue
+                            if self.on_message: self.on_message(raw)
+                        except asyncio.TimeoutError:
                             continue
-                        if self.on_message:
-                            self.on_message(raw)
-
-            except (websockets.exceptions.ConnectionClosedError,
-                    websockets.exceptions.ConnectionClosedOK):
-                logger.info("Bağlantı kapandı.")
             except Exception as e:
                 logger.error(f"Bağlantı hatası: {e}")
             finally:
-                self.websocket = None
-                self.state     = ConnectionState.DISCONNECTED
-                if self.on_disconnected:
-                    self.on_disconnected()
-
+                self.state = ConnectionState.DISCONNECTED
+                if self.on_disconnected: self.on_disconnected()
             await asyncio.sleep(self.config.reconnect_delay)
 
     def send(self, data: str) -> bool:
@@ -689,7 +689,7 @@ class ChatFrame(ctk.CTkFrame):
         self.ws.on_connected    = lambda: self.after(0, self._on_ws_connected)
         self.ws.on_disconnected = lambda: self.after(0, self._status.disconnected)
         self.ws.on_message      = self._on_incoming  # called from network thread
-
+        self.ws.on_ping_update  = lambda ms: self.after(0, lambda: self.update_connection_quality(ms))
     def _on_ws_connected(self):
         self._status.connected(self.ws.config.uri)
         self._sys("Bağlantı sağlandı.  Uçtan uca AES-256 şifreleme aktif. ✓")
@@ -727,21 +727,39 @@ class ChatFrame(ctk.CTkFrame):
 
     # ── Incoming messages ────────────────────────────────────────────────────
     def _on_incoming(self, raw: str):
-        data = self.crypto.decrypt(raw)
+        # 1. Önce Sistem Mesajı mı (JSON mu) kontrol et
+        try:
+            data = json.loads(raw)
+            if isinstance(data, dict) and data.get("type") == "session_update":
+                self._session_manager.sessions = data.get("clients", [])
+                return 
+        except json.JSONDecodeError:
+            pass # JSON değilse şifreli mesajdır
 
-        if data is None:
-            self.chat_logger.log("TAHRİF/HATALI", "[OKUNAMADİ]", raw, verified=False)
-            self.after(0, lambda: self._sys(
-                "🚨 UYARI: Bütünlük doğrulama başarısız — paket değiştirilmiş veya yanlış anahtar!",
-                danger=True,
-            ))
+        # 2. Şifreli Mesaj Çözme
+        decoded_data = self.crypto.decrypt(raw)
+        if decoded_data is None:
             return
 
-        if data["id"] == self.user_id:
-            return  # Kendi echo'muzu görmezden gel
+        if decoded_data["id"] == self.user_id:
+            return 
 
-        self.chat_logger.log(data["id"], data["msg"], raw, verified=True)
-        self.after(0, lambda d=data: self._append(d["id"], d["msg"], is_self=False))
+        self.chat_logger.log(decoded_data["id"], decoded_data["msg"], raw, verified=True)
+        self.after(0, lambda d=decoded_data: self._append(d["id"], d["msg"], is_self=False))
+
+    # --- Mevcut Şifreli Mesaj Mantığı ---
+        # Bu kısım _on_incoming fonksiyonunun içinde olmalıdır
+        decoded_data = self.crypto.decrypt(raw)
+        if decoded_data is None:
+            # Hata loglama kısmı aynı kalabilir...
+            return
+
+        # self.user_id kontrolü 'if decoded_data is None' bloğunun dışında olmalı
+        if decoded_data.get("id") == self.user_id:
+            return
+
+        self.chat_logger.log(decoded_data["id"], decoded_data["msg"], raw, verified=True)
+        self.after(0, lambda d=decoded_data: self._append(d["id"], d["msg"], is_self=False))
 
     # ── Display helpers ───────────────────────────────────────────────────────
     def _append(self, sender: str, message: str, is_self: bool):
@@ -1103,6 +1121,8 @@ class SystemTray:
 # ─────────────────────────────────────────────────────────────────────────────
 class SessionManager:
     """Oturum yönetimi - aktif bağlantıları listele/sonlandır."""
+    def get_sessions(self):
+        return self.sessions
     
     def __init__(self):
         self._sessions: dict[str, dict] = {}
@@ -1243,6 +1263,98 @@ class StatusSelector(ctk.CTkToplevel):
     def _select(self, status: str):
         self.on_select(status)
         self.destroy()
+
+# ─────────────────────────────────────────────────────────────────────────────
+# EK YARDIMCI SINIFLAR (Eksik Olanlar)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class UserStatus:
+    ONLINE = "online"
+    AWAY = "away"
+    BUSY = "busy"
+    
+    @staticmethod
+    def to_emoji(status):
+        return {"online": "🟢", "away": "🟡", "busy": "🔴"}.get(status, "⚪")
+
+class SessionManager:
+    """Aktif oturumları takip eder (Tez görselleştirmesi için)."""
+    def __init__(self):
+        self.sessions = []
+        # Örnek veri (ESP32 simülasyonu için)
+        self.sessions.append({"id": "ESP32_Node_01", "ip": "192.168.4.1", "status": "Master"})
+
+class ConnectionQuality:
+    """Gecikme (Ping) ve sinyal kalitesini ölçer."""
+    def __init__(self):
+        self.pings = []
+    def add_ping(self, ms):
+        self.pings.append(ms)
+        if len(self.pings) > 10: self.pings.pop(0)
+    @property
+    def average_ping(self):
+        return sum(self.pings) / len(self.pings) if self.pings else 0
+    @property
+    def quality(self):
+        p = self.average_ping
+        if p < 50: return "excellent"
+        elif p < 150: return "good"
+        else: return "poor"
+    @property
+    def signal_strength(self):
+        return "▮▮▮▮" if self.quality == "excellent" else "▮▮▯▯"
+
+class TypingIndicator:
+    """'Yazıyor...' animasyonunu yönetir."""
+    def __init__(self, label):
+        self.label = label
+        self._active = False
+    def start(self, user):
+        self._active = True
+        self.label.configure(text=f"{user} yazıyor...")
+    def stop(self):
+        self._active = False
+        self.label.configure(text="")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# APPLICATION ROOT (TAMAMLANMIŞ)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class SecureBridgeApp(ctk.CTk):
+    def __init__(self):
+        super().__init__()
+        self.config = AppConfig.load()
+        self.title("SecureBridge v2.0")
+        self.geometry("600x780")
+        ctk.set_appearance_mode("dark")
+        
+        self._crypto = None
+        self._ws = WebSocketManager(self.config)
+        self._chat_log = ChatLogger(self.config.log_file)
+        self._session_manager = SessionManager()
+        
+        self._show_login()
+
+    def _show_login(self):
+        if hasattr(self, "_chat_frame") and self._chat_frame:
+            self._chat_frame.pack_forget()
+        self._login_frame = LoginFrame(self, on_login=self._login_success)
+        self._login_frame.pack(fill="both", expand=True)
+
+    def _login_success(self, user_id, password):
+        self._crypto = CryptoManager(password)
+        self._login_frame.pack_forget()
+        
+        self._chat_frame = ChatFrame(
+            self, user_id, self._crypto, self._ws, 
+            self._chat_log, self.config, self._open_settings,
+            session_manager=self._session_manager
+        )
+        self._chat_frame.pack(fill="both", expand=True)
+        self._ws.start()
+
+    def _open_settings(self):
+        SettingsDialog(self, self.config)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
