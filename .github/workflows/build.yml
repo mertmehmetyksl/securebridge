@@ -24,7 +24,8 @@ jobs:
     
     - name: Build EXE
       run: |
-        pyinstaller --onefile --name SecureBridge --add-data ".;." --hidden-import=ctypes --collect-all customtkinter main.py
+        pyinstaller --onefile --name SecureBridge --windowed --noconfirm main.py
+      shell: cmd
     
     - name: Upload artifact
       uses: actions/upload-artifact@v4
