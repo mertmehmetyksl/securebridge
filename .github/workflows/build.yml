@@ -32,13 +32,3 @@ jobs:
       with:
         name: SecureBridge-exe
         path: dist/SecureBridge.exe
-    
-    - name: Upload to Release
-      if: github.event_name == 'push' && !github.event.repository.fork
-      uses: softprops/action-gh-release@v1
-      with:
-        files: dist/SecureBridge.exe
-        tag_name: v${{ github.run_number }}
-        name: Release v${{ github.run_number }}
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
