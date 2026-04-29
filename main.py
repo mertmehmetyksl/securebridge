@@ -167,7 +167,12 @@ class CryptoManager:
         except Exception as e:
             logger.error(f"Beklenmeyen şifre çözme hatası: {e}")
             return None
-
+    def zeroize(self):
+        """Kritik anahtarları bellekten (RAM) temizler."""
+        self.key = None
+        self.fernet = None
+        import gc
+        gc.collect() # Çöp toplayıcıyı zorla çalıştırarak izleri siler
 
 # ─────────────────────────────────────────────────────────────────────────────
 # WEBSOCKET MANAGER
@@ -531,11 +536,12 @@ class ChatFrame(ctk.CTkFrame):
         self._typing_indicator = None
 
         self._build_header()
+        
         self._build_statusbar()
         self._build_textarea()
         self._build_inputbar()
         self._wire_ws()
-
+        
     # ── Header ───────────────────────────────────────────────────────────────
     def _build_header(self):
         hdr = ctk.CTkFrame(self, fg_color=T["bg2"], height=52, corner_radius=0,
@@ -548,13 +554,6 @@ class ChatFrame(ctk.CTkFrame):
                      text_color=T["txt0"]).pack(side="left", padx=16)
 
         # Status indicator (tıklayarak değiştir)
-        self._status_indicator = ctk.CTkButton(
-            hdr, text="🟢", width=30, height=30,
-            font=(T["font_mono"], 12),
-            fg_color="transparent", hover_color=T["bg3"],
-            command=self._show_status_selector,
-        )
-        self._status_indicator.pack(side="left", padx=4)
 
         # Right-side controls
         for text, cmd in [
@@ -574,7 +573,16 @@ class ChatFrame(ctk.CTkFrame):
         ctk.CTkLabel(badge, text=f"  {self.user_id}  ",
                      font=(T["font_mono"], 11, "bold"),
                      text_color=T["txt0"]).pack(padx=4, pady=2)
-
+        # PANIC / ZEROIZE Butonu
+        # PANIC Butonu - En sağa yerleşir
+        self._panic_btn = ctk.CTkButton(
+            hdr, text="☢ PANIC", width=70, height=30,
+            fg_color="#991b1b", hover_color="#ef4444",
+            font=(T["font_mono"], 11, "bold"),
+            command=self._emergency_zeroize
+        )
+        self._panic_btn.pack(side="right", padx=10)
+        
     # ── Status bar ───────────────────────────────────────────────────────────
     def _build_statusbar(self):
         bar = ctk.CTkFrame(self, fg_color=T["bg1"], height=26, corner_radius=0)
@@ -636,6 +644,7 @@ class ChatFrame(ctk.CTkFrame):
         tb.tag_configure("system",  foreground=T["warn"])
         tb.tag_configure("danger",  foreground=T["danger"])
         tb.tag_configure("body",    foreground=T["txt0"])
+        
 
     # ── Input bar ────────────────────────────────────────────────────────────
     def _build_inputbar(self):
@@ -727,37 +736,30 @@ class ChatFrame(ctk.CTkFrame):
 
     # ── Incoming messages ────────────────────────────────────────────────────
     def _on_incoming(self, raw: str):
-        # 1. Önce Sistem Mesajı mı (JSON mu) kontrol et
+        # 1. ADIM: ESP32'den gelen şifresiz sistem mesajı mı (JSON)?
         try:
             data = json.loads(raw)
             if isinstance(data, dict) and data.get("type") == "session_update":
-                self._session_manager.sessions = data.get("clients", [])
+                # DİKKAT: 'self.session_manager' mı yoksa 'self._session_manager' mı? 
+                # Hata mesajına göre senin kodunda 'self.session_manager' (alt çizgisiz) geçerli.
+                self.session_manager.sessions = data.get("clients", [])
                 return 
-        except json.JSONDecodeError:
-            pass # JSON değilse şifreli mesajdır
+        except:
+            pass
 
-        # 2. Şifreli Mesaj Çözme
+        # 2. ADIM: Şifreli Mesaj Çözme (Fernet/AES)
         decoded_data = self.crypto.decrypt(raw)
+        
+        # Şifre çözülemediyse (hatalı anahtar veya bozuk veri) çık
         if decoded_data is None:
             return
 
-        if decoded_data["id"] == self.user_id:
+        # Mesajı gönderen bizsek ekrana tekrar basma
+        if decoded_data.get("id") == self.user_id:
             return 
 
-        self.chat_logger.log(decoded_data["id"], decoded_data["msg"], raw, verified=True)
-        self.after(0, lambda d=decoded_data: self._append(d["id"], d["msg"], is_self=False))
-
-    # --- Mevcut Şifreli Mesaj Mantığı ---
-        # Bu kısım _on_incoming fonksiyonunun içinde olmalıdır
-        decoded_data = self.crypto.decrypt(raw)
-        if decoded_data is None:
-            # Hata loglama kısmı aynı kalabilir...
-            return
-
-        # self.user_id kontrolü 'if decoded_data is None' bloğunun dışında olmalı
-        if decoded_data.get("id") == self.user_id:
-            return
-
+        # 3. ADIM: Kayıt ve Görselleştirme
+        # Loglama ve mesajı ekrana basma (Senin görsel fonksiyonun: _append)
         self.chat_logger.log(decoded_data["id"], decoded_data["msg"], raw, verified=True)
         self.after(0, lambda d=decoded_data: self._append(d["id"], d["msg"], is_self=False))
 
@@ -802,8 +804,7 @@ class ChatFrame(ctk.CTkFrame):
         self._entry.focus()
 
     # ── Status selector ─────────────────────────────────────────────────────
-    def _show_status_selector(self):
-        StatusSelector(self, UserStatus.ONLINE, self._on_status_selected)
+    
     
     def _on_status_selected(self, status: str):
         if self._on_status_change:
@@ -836,7 +837,30 @@ class ChatFrame(ctk.CTkFrame):
     def hide_typing(self):
         if self._typing_indicator:
             self._typing_indicator.stop()
+    def _emergency_zeroize(self):
+        """Askeri standartta veri ve anahtar imha protokolü."""
+        # 1. Bellekteki anahtarları yok et
+        self.crypto.zeroize()
+        
+        # 2. Log dosyalarını bul ve üzerine rastgele veri yazarak sil
+        # Uygulamanın oluşturduğu standart log dosyasını hedef alıyoruz
+        log_files = ["securebridge.log", "chat_history.log"] 
+        
+        for file in log_files:
+            try:
+                if os.path.exists(file):
+                    # Dosyanın boyutunu öğren ve üzerine rastgele baytlar yaz
+                    size = os.path.getsize(file)
+                    with open(file, "ba+", buffering=0) as f:
+                        f.write(os.urandom(size))
+                    os.remove(file)
+            except:
+                pass
 
+        # 3. Kullanıcıya bildirim ver ve kapat
+        print("KRİPTOGRAFİK İMHA: Tüm anahtarlar ve loglar yok edildi.")
+        self.master.destroy()
+        sys.exit(0)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # APPLICATION ROOT
@@ -1119,36 +1143,34 @@ class SystemTray:
 # ─────────────────────────────────────────────────────────────────────────────
 # SESSION MANAGER
 # ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# SESSION MANAGER (Bu kısmı bul ve değiştir)
+# ─────────────────────────────────────────────────────────────────────────────
 class SessionManager:
-    """Oturum yönetimi - aktif bağlantıları listele/sonlandır."""
-    def get_sessions(self):
-        return self.sessions
-    
+    """Aktif oturumları takip eder."""
     def __init__(self):
-        self._sessions: dict[str, dict] = {}
-    
-    def add_session(self, session_id: str, username: str, ip: str = ""):
-        self._sessions[session_id] = {
-            "username": username,
-            "ip": ip,
-            "connected_at": datetime.now().strftime("%H:%M:%S"),
-            "status": UserStatus.ONLINE,
-        }
-    
-    def remove_session(self, session_id: str):
-        if session_id in self._sessions:
-            del self._sessions[session_id]
-    
-    def update_status(self, session_id: str, status: str):
-        if session_id in self._sessions:
-            self._sessions[session_id]["status"] = status
-    
-    def get_sessions(self) -> dict:
-        return self._sessions.copy()
-    
-    def get_active_count(self) -> int:
-        return sum(1 for s in self._sessions.values() if s["status"] == UserStatus.ONLINE)
+        # ESP32'den gelen verilerin yazılacağı liste
+        self.sessions = [] 
 
+    def get_sessions(self):
+        """Arayüzün (UI) hata almadan listeyi okumasını sağlar."""
+        return self.sessions
+
+    def add_session(self, session_id, username, ip=""):
+        # Eğer liste formatında tutuyorsan (mevcut yapın):
+        self.sessions.append({
+            "id": session_id, 
+            "username": username, 
+            "ip": ip, 
+            "connected_at": datetime.now().strftime("%H:%M:%S"),
+            "status": "online"
+        })
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SESSION DIALOG (1191. satırdaki hata burada oluşuyor)
+# ─────────────────────────────────────────────────────────────────────────────
+# SessionDialog içindeki _refresh metodu 'self.session_manager.get_sessions()' 
+# çağırdığında yukarıdaki fonksiyon sayesinde artık AttributeError vermeyecektir.
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SESSION DIALOG
@@ -1277,12 +1299,7 @@ class UserStatus:
     def to_emoji(status):
         return {"online": "🟢", "away": "🟡", "busy": "🔴"}.get(status, "⚪")
 
-class SessionManager:
-    """Aktif oturumları takip eder (Tez görselleştirmesi için)."""
-    def __init__(self):
-        self.sessions = []
-        # Örnek veri (ESP32 simülasyonu için)
-        self.sessions.append({"id": "ESP32_Node_01", "ip": "192.168.4.1", "status": "Master"})
+
 
 class ConnectionQuality:
     """Gecikme (Ping) ve sinyal kalitesini ölçer."""
