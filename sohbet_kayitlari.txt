@@ -1,0 +1,8 @@
+┌────────────────────────────────────────────────────────────────
+│  ZAMAN      : 2026-04-30 14:06:02
+│  GÖNDEREN   : Siz (mert)
+│  DÜZ METİN  : merhaba
+│  ŞİFRELİ    : gAAAAABp8zeabQNsjpeJK2yv1wZ5eyrefIro4wyTFFaAidWBjTWK1_rU5sWCynUqkqbv1iqk...
+│  BÜTÜNLÜK   : ✓ HMAC DOĞRULANDI
+└────────────────────────────────────────────────────────────────
+
