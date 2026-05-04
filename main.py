@@ -694,45 +694,21 @@ class RoomJoinDialog(ctk.CTkToplevel):
     # ── Aşama geçişi ──────────────────────────────────────────────────────────
     def _next(self):
         val = self._entry.get().strip()
+        if not val:
+            self._err_lbl.configure(text="⚠ Şifre boş olamaz.")
+            return
 
-        if self._phase == 1:
-            # ── Aşama 1: şifre doğrulama ──────────────────────────────────────
-            if not val:
-                self._err_lbl.configure(text="⚠  Şifre boş olamaz.")
-                return
-
-            self._password = val
-
-            if val in ROOM_REGISTRY:
-                # Bilinen oda → direkt katıl
-                self.on_join(self._password, "")
-                self.destroy()
-            else:
-                # Bilinmeyen şifre → özel oda adı iste
-                self._phase = 2
-                self._title_lbl.configure(text="Özel Oda Adı")
-                self._sub_lbl.configure(
-                    text=f"Şifre: {self._password[:3]}···  |  Yeni odanın adını belirleyin")
-                self._entry.configure(show="",
-                                       placeholder_text="Oda adı (örn: taktik-kanal)")
-                self._entry.delete(0, "end")
-                self._btn.configure(text="Oda Oluştur  ✓")
-                self._err_lbl.configure(text="")
-                self._entry.focus()
-
-        elif self._phase == 2:
-            # ── Aşama 2: oda adı doğrulama ────────────────────────────────────
-            name = val
-            if len(name) < 2:
-                self._err_lbl.configure(text="⚠  Oda adı en az 2 karakter olmalı.")
-                return
-            forbidden = set(r'/\:*?"<>|')
-            if any(c in name for c in forbidden):
-                self._err_lbl.configure(text="⚠  Geçersiz karakter içeriyor.")
-                return
-            self.on_join(self._password, name)
-            self.destroy()
-
+    # Eğer şifre kayıtlı değilse, otomatik bir isim üret (Aşama 2'yi bypass et)
+        if val in ROOM_REGISTRY:
+            self.on_join(val, "")
+        else:
+        # Şifrenin ilk 6 karakterinden benzersiz bir isim türet
+            import hashlib
+            short_hash = hashlib.md5(val.encode()).hexdigest()[:6]
+            custom_name = f"ozel-{short_hash}"
+            self.on_join(val, custom_name)
+    
+        self.destroy()
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ROOM SIDEBAR  — sol panel
@@ -1155,46 +1131,24 @@ class ChatFrame(ctk.CTkFrame):
 
     # ── Incoming messages ────────────────────────────────────────────────────
     def _on_incoming(self, raw: str):
-        # Sistem JSON mesajı mı?
         try:
+        # Önce gelen veri bir JSON (sistem mesajı) mı diye bakıyoruz
             data = json.loads(raw)
             if isinstance(data, dict) and data.get("type") == "session_update":
+            # Gelen listeyi SessionManager'a aktar
                 if self._session_manager:
-                    self._session_manager.sessions = data.get("clients", {})
-                return
-        except Exception:
+                    self._session_manager.sessions = data.get("clients", [])
+                return # Bu bir sistem mesajı, chat olarak işleme devam etme
+        except (json.JSONDecodeError, TypeError):
+        # JSON değilse muhtemelen şifreli chat mesajıdır, devam et
             pass
 
-        # Tüm oda crypto'larıyla çözmeye çalış
+    # Şifreli mesajı çözme aşaması
         result = self.room_manager.decrypt_incoming(raw)
-        if result is None:
-            return   # Hiçbir odamızın anahtarıyla çözülemedi
-
-        room, decoded = result
-
-        # Kendi mesajımızın yankısını gösterme
-        if decoded.get("id") == self.user_id:
-            return
-
-        sender   = decoded.get("id", "?")
-        msg      = decoded.get("msg", "")
-        priority = decoded.get("priority", Priority.NORMAL)
-
-        # Oda tamponuna kaydet
-        room.messages.append((sender, msg, False, priority))
-        self.chat_logger.log(sender, msg, raw,
-                             room=room.name, priority=priority, verified=True)
-
-        active = self.room_manager.active_room
-        if active and room.name == active.name:
-            # Aktif oda → hemen göster
-            self.after(0, lambda s=sender, m=msg, p=priority:
-                       self._append(s, m, is_self=False, priority=p))
-        else:
-            # Başka oda → sidebar'da badge göster
-            if self._sidebar_ref:
-                self.after(0, lambda rn=room.name:
-                           self._sidebar_ref.mark_unread(rn))
+        if result:
+            room, decoded = result
+            if decoded.get("id") != self.user_id:
+                self.after(0, lambda r=room, d=decoded: self._display(r, d))
 
     # ── Display helpers ───────────────────────────────────────────────────────
     def _append(self, sender: str, message: str, is_self: bool,
@@ -1445,59 +1399,54 @@ class SessionManager:
 # SESSION DIALOG
 # ─────────────────────────────────────────────────────────────────────────────
 class SessionDialog(ctk.CTkToplevel):
-    def __init__(self, parent, session_manager: SessionManager):
+    def __init__(self, parent, session_manager):
         super().__init__(parent)
         self.session_manager = session_manager
-        self.title("Oturum Yönetimi")
-        self.geometry("400x350")
-        self.resizable(False, False)
+        self.title("Aktif Oturumlar")
+        self.geometry("400x400")
         self.configure(fg_color=T["bg2"])
-        self.attributes("-topmost", True)
-        self._build()
-        self._refresh()
+        
+        # 1. ÖNCE Arayüz Elemanlarını Oluştur (Değişken ismine dikkat: scroll_frame)
+        ctk.CTkLabel(self, text="📋 Cihaz Listesi", font=(T["font_mono"], 14, "bold")).pack(pady=10)
+        
+        self.scroll_frame = ctk.CTkScrollableFrame(self, fg_color="transparent") 
+        self.scroll_frame.pack(fill="both", expand=True, padx=10)
+        
+        # 2. SONRA Döngüyü Başlat (Elemanlar hazır olduktan sonra)
+        self._update_loop() 
 
-    def _build(self):
-        ctk.CTkLabel(self, text="📋 Aktif Oturumlar",
-                     font=(T["font_mono"], 14, "bold"),
-                     text_color=T["txt0"]).pack(pady=(16, 8))
-        self._list_frame = ctk.CTkScrollableFrame(self, fg_color="transparent", height=220)
-        self._list_frame.pack(fill="both", expand=True, padx=16, pady=8)
-        bf = ctk.CTkFrame(self, fg_color="transparent")
-        bf.pack(fill="x", padx=16, pady=8)
-        ctk.CTkButton(bf, text="🔄 Yenile", width=120,
-                      fg_color=T["accent"], hover_color=T["accent_h"],
-                      command=self._refresh).pack(side="left", padx=4)
-        ctk.CTkButton(bf, text="Kapat", width=120,
-                      fg_color=T["bg3"], hover_color=T["border"],
-                      command=self.destroy).pack(side="right", padx=4)
+    def _update_loop(self):
+        if self.winfo_exists():
+            self._refresh_ui()
+            self.after(3000, self._update_loop)
 
-    def _refresh(self):
-        for w in self._list_frame.winfo_children():
-            w.destroy()
-        sessions = self.session_manager.get_sessions()
-        if not sessions:
-            ctk.CTkLabel(self._list_frame, text="Aktif oturum yok",
-                         font=(T["font_mono"], 11),
-                         text_color=T["txt2"]).pack(pady=20)
+    def _refresh_ui(self):
+    # Eski widget'ları temizle
+        for widget in self.scroll_frame.winfo_children():
+            widget.destroy()
+
+        clients = self.session_manager.sessions
+    
+    # Eğer liste boşsa veya None ise kullanıcıya bilgi ver
+        if not clients or not isinstance(clients, list):
+            ctk.CTkLabel(self.scroll_frame, text="Oturum bilgisi bekleniyor...", font=(T["font_mono"], 10)).pack(pady=20)
             return
-        for sid, info in sessions.items():
-            row = ctk.CTkFrame(self._list_frame, fg_color=T["bg3"])
-            row.pack(fill="x", pady=4)
-            emoji = UserStatus.to_emoji(info.get("status", "offline"))
-            ctk.CTkLabel(row, text=f"{emoji} {info['username']}",
-                         font=(T["font_mono"], 11, "bold"),
-                         text_color=T["txt0"]).pack(side="left", padx=8, pady=8)
-            ctk.CTkLabel(row, text=f"Bağlanma: {info['connected_at']}",
-                         font=(T["font_mono"], 9),
-                         text_color=T["txt2"]).pack(side="left", padx=8)
-            ctk.CTkButton(row, text="Sonlandır", width=70, height=24,
-                          fg_color=T["danger"], hover_color="#dc2626",
-                          font=(T["font_mono"], 9),
-                          command=lambda s=sid: self._kill(s)).pack(side="right", padx=8)
 
-    def _kill(self, sid: str):
-        self.session_manager.remove_session(sid)
-        self._refresh()
+        for client in clients:
+        # HATA ÇÖZÜMÜ: Eğer client bir sözlükse .get() kullan, değilse direkt yazdır[cite: 1, 2]
+            if isinstance(client, dict):
+                name = client.get("id", "Bilinmiyor")
+                ip = client.get("ip", "0.0.0.0")
+                status = client.get("status", "active")
+                txt = f"👤 {name} | IP: {ip} | {status}"
+            else:
+            # Eğer veri sadece bir string olarak geldiyse (örn: "Mert")[cite: 1, 2]
+                txt = f"👤 {str(client)}"
+
+            row = ctk.CTkFrame(self.scroll_frame, fg_color=T["bg3"])
+            row.pack(fill="x", pady=2)
+        
+            ctk.CTkLabel(row, text=txt, font=(T["font_mono"], 10)).pack(padx=10, pady=5)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
