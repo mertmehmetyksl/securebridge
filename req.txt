@@ -1,0 +1,9 @@
+customtkinter
+websockets
+cryptography
+psutil
+matplotlib
+geocoder
+tkintermapview
+aiortc
+av
