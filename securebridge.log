@@ -1,2 +1,23 @@
 2026-05-05 13:42:02,394 [INFO] SecureBridge: Giriş yapıldı: asdasd
 2026-05-05 13:42:12,924 [ERROR] SecureBridge: Bağlantı hatası: timed out during opening handshake
+2026-05-05 14:01:51,608 [INFO] SecureBridge: Giriş yapıldı: mert
+2026-05-05 14:05:02,188 [ERROR] SecureBridge: Bağlantı hatası: sent 1011 (internal error) keepalive ping timeout; no close frame received
+2026-05-05 14:05:17,205 [ERROR] SecureBridge: Bağlantı hatası: timed out during opening handshake
+2026-05-05 14:05:32,220 [ERROR] SecureBridge: Bağlantı hatası: timed out during opening handshake
+2026-05-05 14:05:47,237 [ERROR] SecureBridge: Bağlantı hatası: timed out during opening handshake
+2026-05-05 14:06:02,255 [ERROR] SecureBridge: Bağlantı hatası: timed out during opening handshake
+2026-05-05 14:06:17,284 [ERROR] SecureBridge: Bağlantı hatası: timed out during opening handshake
+2026-05-05 14:06:32,301 [ERROR] SecureBridge: Bağlantı hatası: timed out during opening handshake
+2026-05-05 14:06:47,316 [ERROR] SecureBridge: Bağlantı hatası: timed out during opening handshake
+2026-05-05 14:07:02,331 [ERROR] SecureBridge: Bağlantı hatası: timed out during opening handshake
+2026-05-05 14:07:17,348 [ERROR] SecureBridge: Bağlantı hatası: timed out during opening handshake
+2026-05-05 14:07:32,364 [ERROR] SecureBridge: Bağlantı hatası: timed out during opening handshake
+2026-05-05 14:07:47,374 [ERROR] SecureBridge: Bağlantı hatası: timed out during opening handshake
+2026-05-05 14:08:02,381 [ERROR] SecureBridge: Bağlantı hatası: timed out during opening handshake
+2026-05-05 14:08:17,398 [ERROR] SecureBridge: Bağlantı hatası: timed out during opening handshake
+2026-05-05 14:08:32,414 [ERROR] SecureBridge: Bağlantı hatası: timed out during opening handshake
+2026-05-05 14:08:47,430 [ERROR] SecureBridge: Bağlantı hatası: timed out during opening handshake
+2026-05-05 14:09:02,446 [ERROR] SecureBridge: Bağlantı hatası: timed out during opening handshake
+2026-05-05 14:09:17,462 [ERROR] SecureBridge: Bağlantı hatası: timed out during opening handshake
+2026-05-05 14:09:32,472 [ERROR] SecureBridge: Bağlantı hatası: timed out during opening handshake
+2026-05-05 14:09:47,488 [ERROR] SecureBridge: Bağlantı hatası: timed out during opening handshake

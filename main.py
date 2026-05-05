@@ -658,8 +658,17 @@ class ChatFrame(ctk.CTkFrame):
                     n=data.get("room_name")
                     if n:
                         ok,room,err=self.rm.join(n)
-                        if ok and self._sidebar: self.after(0,self._sidebar.refresh)
-                    return
+                    if ok and room:
+                        if self._sidebar:
+                            self.after(0, self._sidebar.refresh)
+                            self.after(0, lambda name=n: self._sidebar.set_active(name))
+            # Eğer şu an aktif oda yoksa otomatik geç, varsa sadece sidebar'ı güncelle
+                        if self.rm.active_room is None or self.rm.active_room.name == n:
+                            self.after(0, lambda name=n: self.switch_room(name))
+                        else:
+                # Aktif odadayken gelen yeni oda → sadece unread işaretle
+                            self.after(0, lambda name=n: self._sidebar.mark_unread(name) if self._sidebar else None)
+                return
                 if t=="location_update":
                     lat=data.get("lat"); lon=data.get("lon"); user=data.get("user","?")
                     if lat is not None and lon is not None:

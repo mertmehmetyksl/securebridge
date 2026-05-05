@@ -1,0 +1,10 @@
+┌────────────────────────────────────────────────────────────────
+│ ZAMAN: 2026-05-05 14:02:50
+│ ODA: #alfa-operation
+│ ÖNCELİK: [NORMAL]
+│ GÖNDEREN: Siz (mert)
+│ DÜZ METİN: deneme
+│ ŞİFRELİ: gAAAAABp-c5aTww3aXdtdaSo6hyghe2ZC8-XjzmmyRqPeWA5y9Q60Sqi1JGfVxWnvVCNkh68...
+│ BÜTÜNLÜK: ✓
+└────────────────────────────────────────────────────────────────
+
